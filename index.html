@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Professional mixing, mastering, and composition for cinematic music – orchestral, world, and electronic.">
+  <title>Your Name – Audio Portfolio</title>
+  <link rel="stylesheet" href="css/styles.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;500;700&display=swap" rel="stylesheet">
+</head>
+
+<body>
+  <header>
+    <div class="container">
+      <h1>Jean Haffner</h1>
+      <p>Mixing • Mastering • Composition</p>
+    </div>
+  </header>
+
+  <nav>
+    <div class="container">
+      <a href="#about">About</a>
+      <a href="#work">Work</a>
+      <a href="#contact">Contact</a>
+    </div>
+  </nav>
+
+  <section id="about" class="container">
+    <h2>About</h2>
+    <p>I create immersive cinematic audio experiences blending orchestral, world, and electronic textures. With a focus on clarity, depth, and emotional impact, I offer professional mixing, mastering, and original composition for film, games, and media.</p>
+    <div class="social-links">
+        <a href="https://jeanhaffner.bandcamp.com" target="_blank" rel="noopener">Bandcamp</a>
+        <a href="https://youtube.com/@JeanHaffner" target="_blank" rel="noopener">YouTube</a>
+        <a href="https://soundcloud.com/jean_haffner" target="_blank" rel="noopener">SoundCloud</a>
+        <a href="https://open.spotify.com/artist/5iD849vcixwsA9MqmIBc4W" target="_blank" rel="noopener">Spotify</a>
+    </div>
+  </section>
+
+  <section id="work" class="container">
+    <h2>Selected Work</h2>
+    <div class="video-grid">
+      <div class="video">
+        <iframe
+          width="560" height="315"
+          src="https://www.youtube.com/embed/frc0dUdRzxs"
+          title="Jean Haffner - St. Lambertus Kirche Morschenich"
+          frameborder="0"
+          allow="accelerometer;
+          autoplay; clipboard-write;
+          encrypted-media;
+          gyroscope;
+          picture-in-picture;
+          web-share"
+          referrerpolicy="strict-origin-when-cross-origin"
+          allowfullscreen>
+        </iframe>
+      </div>
+    </div>
+  </section>
+
+  <section id="contact" class="container">
+    <h2>Contact</h2>
+    <p>For enquiries, collaborations, or quotes, please get in touch:</p>
+    <p><a href="mailto:music@jeanhaffner.com">music@jeanhaffner.com</a></p>
+  </section>
+
+  <footer>
+    <div class="container">
+      <p>&copy; <span id="year"></span> Your Name. All rights reserved.</p>
+    </div>
+  </footer>
+
+  <script>
+    document.getElementById("year").textContent = new Date().getFullYear();
+  </script>
+</body>
+</html>
