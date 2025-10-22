@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Semper in unitate!</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background-color: #121212;
+      color: #ffffff;
+      font-family: 'Times New Roman', Georgia, serif;
+      text-align: center;
+    }
+
+    h1 {
+      font-size: 3rem;
+      font-weight: 400;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: #f0f0f0;
+      animation: fadeIn 2s ease-in-out;
+    }
+
+    @keyframes fadeIn {
+      0% { opacity: 0; transform: translateY(-20px); }
+      100% { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Streifen-Akzent in Blau-Weiß-Gold */
+    .accent {
+      width: 120px;
+      height: 6px;
+      margin: 20px auto 0;
+      border-radius: 3px;
+      background: linear-gradient(to right, #0047AB, #ffffff, #FFD700);
+    }
+  </style>
+</head>
+<body>
+  <div>
+    <h1>Semper in unitate!</h1>
+    <div class="accent"></div>
+  </div>
+</body>
+</html>
