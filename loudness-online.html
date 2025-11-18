@@ -63,10 +63,12 @@ function highlightLRA(value, lowThreshold=4, highThreshold=20, unit='LU'){
 }
 
 /* ===================== Result ===================== */
+//Params: [TargetLevel, IntegratedLoudness, TruePeak, LoudnessRAnge]
 function approvalCheck(tl, il, tp, lra){
   result = true;
-  if(il > tl+1 || il < -60) result=false;
-  if(tp > -1 || tp < tl) result = false;
+  if(il > tl+1 && tp >= -1){
+  if(il > tl+3 && tp > -2) result=false;}
+  if(tp < tl || il < -60) result = false;
   if(lra > 30 || lra < 2) result = false;
   return result ? `✅` : `❌`;
 }
