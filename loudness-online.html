@@ -26,7 +26,7 @@
     <option value="-16">Apple Music (−16 LUFS)</option>
     <option value="-15">Deezer (−15 LUFS)</option>
     <option value="-13">YouTube (reduce only, ≈−13 LUFS)</option>
-    <option value="-14">SoundCloud (≈−14 LUFS)</option>
+    <option value="-14">SoundCloud (reduce only, ≈−14 LUFS)</option>
   </select>
   <button id="analyse">Analyse</button>
 </div>
@@ -199,7 +199,9 @@ analyse.onclick=async()=>{
   let gainDB=target-g.integrated;
   if (gainDB > 0 - (dBTP + 1)) gainDB = 0 - (dBTP + 1);
   if(service.selectedOptions[0].text.toLowerCase().includes("youtube") && gainDB>0) gainDB=0;
+  if(service.selectedOptions[0].text.toLowerCase().includes("soundcloud") && gainDB>0) gainDB=0;
 
+  const ppl=g.integrated+gainDB;
   normalisedGain=Math.pow(10,gainDB/20);
 
   out.innerHTML=
@@ -209,6 +211,8 @@ Loudness range (LRA): ${highlightLRA(LRA)}
 
 Target: ${target.toFixed(2)} LUFS
 Applied gain: ${gainDB.toFixed(2)} dB
+
+<b>Post processing: ${ppl.toFixed(2)} LUFS</b>
 
 ${approvalCheck(target,g.integrated,dBTP,LRA)} Ready to preview.`;
 };
