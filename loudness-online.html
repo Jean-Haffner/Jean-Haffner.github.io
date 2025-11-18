@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Online Loudness Preview</title>
+  <link rel="stylesheet" href="css/styles.css" />
+<style>
+  body{font-family:system-ui,Segoe UI;max-width:900px;margin:2rem;}
+  .row{display:flex;gap:1rem;align-items:center;margin-bottom:0.7rem;}
+  button{padding:0.4rem 0.7rem}
+  pre{background:#066606;padding:0.8rem;border-radius:6px;white-space:pre-wrap}
+  label{font-weight:600}
+  p{color: #999; font-size: 0.9rem;}
+</style>
+</head>
+<body>
+
+<h1>Online Loudness Performance Check</h1>
+<h3>Preview BS.1770-4 Loudness & True-Peak...</h3>
+
+<div class="row">
+  <input id="file" type="file" accept="audio/*">
+  <label for="service">Choose service:</label>
+  <select id="service">
+    <option value="-14" selected>Spotify / Tidal / Amazon (−14 LUFS)</option>
+    <option value="-16">Apple Music (−16 LUFS)</option>
+    <option value="-15">Deezer (−15 LUFS)</option>
+    <option value="-13">YouTube (reduce only, ≈−13 LUFS)</option>
+    <option value="-14">SoundCloud (≈−14 LUFS)</option>
+  </select>
+  <button id="analyse">Analyse</button>
+</div>
+
+<div class="row">
+  <button id="playButton">Play</button>
+  <button id="pauseButton">Pause</button>
+  <button id="stopButton">Stop</button>
+</div>
+
+<pre id="out">Load a file.</pre>
+<p id="credits">&copy; <span id="year"></span> Jean Haffner. All rights reserved.</p>
+
+<script>
+/* ===================== BS.1770-4 K-weighting (48kHz) ===================== */
+const STAGE1_B=[1.53512485958697,-2.69169618940638,1.19839281085285];
+const STAGE1_A=[1,-1.69065929318241,0.73248077421585];
+const STAGE2_B=[1,-2,1];
+const STAGE2_A=[1,-1.99004745483398,0.99007225036621];
+
+/* ===================== Globals ===================== */
+let decoded=null, playCtx=null, playSrc=null, normalisedGain=1; result=false;
+document.getElementById("year").textContent = new Date().getFullYear();
+
+/* ===================== Highlight helpers ===================== */
+function highlightIf(value, threshold, unit){
+  return value > threshold ? `<span style="color:red">⚠️ ${value.toFixed(2)} ${unit}</span>` : `${value.toFixed(2)} ${unit}`;
+}
+
+function highlightLRA(value, lowThreshold=4, highThreshold=20, unit='LU'){
+  if(value < lowThreshold) return `<span style="color:orange">⚠️ ${value.toFixed(2)} ${unit}</span>`;
+  else if(value > highThreshold) return `<span style="color:orange">⚠️ ${value.toFixed(2)} ${unit}</span>`;
+  else return `${value.toFixed(2)} ${unit}`;
+}
+
+/* ===================== Result ===================== */
+function approvalCheck(tl, il, tp, lra){
+  result = true;
+  if(il > tl+1 || il < -60) result=false;
+  if(tp > -1 || tp < tl) result = false;
+  if(lra > 30 || lra < 2) result = false;
+  return result ? `✅` : `❌`;
+}
+
+/* ===================== File load ===================== */
+file.onchange=async()=>{
+  const f=file.files[0];
+  if(!f) return out.textContent="No file selected.";
+  out.textContent="Decoding…";
+  const arr=await f.arrayBuffer();
+  const ctx=new AudioContext();
+  try{ decoded=await ctx.decodeAudioData(arr.slice(0)); 
+    out.textContent=`Loaded: ${f.name} (${decoded.duration.toFixed(2)} s)`; 
+  }finally{ctx.close();}
+};
+
+/* ===================== K-weighted 48kHz render ===================== */
+async function renderKWeighted48(buf){
+  const sr=48000;
+  const L=Math.ceil(buf.duration*sr);
+  const off=new OfflineAudioContext(buf.numberOfChannels,L,sr);
+  const src=off.createBufferSource(); src.buffer=buf;
+  const s1=off.createIIRFilter(STAGE1_B,STAGE1_A);
+  const s2=off.createIIRFilter(STAGE2_B,STAGE2_A);
+  src.connect(s1).connect(s2).connect(off.destination);
+  src.start();
+  return await off.startRendering();
+}
+
+/* ===================== Block energies ===================== */
+function blockEnergies48(buf){
+  const sr=buf.sampleRate, block=Math.round(0.4*sr), hop=Math.round(0.1*sr);
+  const nCh=buf.numberOfChannels, N=buf.length;
+  const w=nCh===1?[1]:nCh===2?[1,1]:nCh===5?[1,1,1,1.41,1.41]:Array(nCh).fill(1);
+  const out=[];
+  for(let s=0;s+block<=N;s+=hop){
+    let sum=0;
+    for(let ch=0;ch<nCh;ch++){
+      const d=buf.getChannelData(ch);
+      let x=0; for(let i=0;i<block;i++) x+=d[s+i]*d[s+i];
+      sum+=w[ch]*(x/block);
+    }
+    out.push(sum);
+  }
+  return out;
+}
+const toLU=e=>-0.691+10*Math.log10(e+1e-12);
+
+/* ===================== BS.1770-4 integrated loudness ===================== */
+function integrateBS1770(E){
+  const LU=E.map(toLU);
+  const abs=E.filter((e,i)=>LU[i]>-70);
+  if(!abs.length) return {integrated:-Infinity};
+  const meanAbs=abs.reduce((a,b)=>a+b,0)/abs.length;
+  const ungated=toLU(meanAbs);
+  const th=ungated-10;
+  const rel=E.filter((e,i)=>LU[i]>th);
+  if(!rel.length) return {integrated:ungated};
+  const meanRel=rel.reduce((a,b)=>a+b,0)/rel.length;
+  return {integrated:toLU(meanRel)};
+}
+
+/* ===================== True-peak ===================== */
+async function truePeak(buf,f=4){
+  const sr=buf.sampleRate*f;
+  const off=new OfflineAudioContext(buf.numberOfChannels,Math.ceil(buf.length*f),sr);
+  const src=off.createBufferSource(); src.buffer=buf;
+  src.connect(off.destination); src.start();
+  const r=await off.startRendering();
+  let m=0;
+  for(let ch=0;ch<r.numberOfChannels;ch++){
+    const d=r.getChannelData(ch);
+    for(let i=0;i<d.length;i++){
+      const a=Math.abs(d[i]); if(a>m) m=a;
+    }
+  }
+  return 20*Math.log10(m+1e-12);
+}
+
+/* ===================== Short-term loudness (3s window) ===================== */
+async function shortTermLUFS(buffer){
+  const win=3.0, hop=1.0, sr=48000;
+  const kw=await renderKWeighted48(buffer);
+  const block=Math.round(win*sr), hopS=Math.round(hop*sr), ch=kw.numberOfChannels;
+  const values=[];
+  for(let start=0;start+block<=kw.length;start+=hopS){
+    let sum=0;
+    for(let c=0;c<ch;c++){
+      const d=kw.getChannelData(c);
+      let s=0; for(let i=0;i<block;i++) s+=d[start+i]*d[start+i];
+      sum+=s/block;
+    }
+    values.push(-0.691+10*Math.log10(sum+1e-12));
+  }
+  return values;
+}
+
+/* ===================== Loudness Range (LRA) ===================== */
+function loudnessRange(shortTerms){
+  if(!shortTerms.length) return 0;
+  const s=[...shortTerms].sort((a,b)=>a-b);
+  const p10=s[Math.floor(s.length*0.10)];
+  const p95=s[Math.floor(s.length*0.95)];
+  return p95-p10;
+}
+
+/* ===================== Analyse ===================== */
+analyse.onclick=async()=>{
+  if(!decoded) return out.textContent="Load a file first.";
+
+  out.textContent="Rendering K-weighted path…";
+  const kw=await renderKWeighted48(decoded);
+
+  out.textContent="Computing blocks…";
+  const E=blockEnergies48(kw);
+
+  out.textContent="Applying BS.1770-4 gating…";
+  const g=integrateBS1770(E);
+
+  out.textContent="Measuring true-peak…";
+  const dBTP=await truePeak(decoded,4);
+
+  out.textContent="Computing loudness range…";
+  const st=await shortTermLUFS(decoded);
+  const LRA=loudnessRange(st);
+
+  const target=parseFloat(service.value);
+  let gainDB=target-g.integrated;
+  if(service.selectedOptions[0].text.toLowerCase().includes("youtube") && gainDB>0) gainDB=0;
+
+  normalisedGain=Math.pow(10,gainDB/20);
+
+  out.innerHTML=
+`Integrated loudness: ${highlightIf(g.integrated,target+1,'LUFS')}
+True-peak: ${highlightIf(dBTP,-1,'dBTP')}
+Loudness range (LRA): ${highlightLRA(LRA)}
+
+Target: ${target.toFixed(2)} LUFS
+Applied gain: ${gainDB.toFixed(2)} dB
+
+${approvalCheck(target,g.integrated,dBTP,LRA)} Ready to preview.`;
+};
+
+/* ===================== Play / Pause / Stop ===================== */
+function stopPlayback(){
+  if(!playSrc) return;
+  try{ playSrc.stop(0); playSrc.disconnect(); }catch(e){}
+  playSrc=null;
+}
+
+playButton.onclick=()=>{
+  if(!decoded) return;
+  stopPlayback();
+  playCtx=new AudioContext();
+  playSrc=playCtx.createBufferSource();
+  playSrc.buffer=decoded;
+
+  const g=playCtx.createGain(); g.gain.value=normalisedGain;
+
+  const sh=playCtx.createWaveShaper();
+  sh.curve=(()=>{
+    const t=0.995,N=2048,c=new Float32Array(N);
+    for(let i=0;i<N;i++){
+      const x=i/(N-1)*2-1, ax=Math.abs(x);
+      c[i]=ax<=t?x:Math.sign(x)*(t+(ax-t)/(1+10*(ax-t)));
+    }
+    return c;
+  })();
+  sh.oversample="4x";
+
+  playSrc.connect(g).connect(sh).connect(playCtx.destination);
+  playSrc.start();
+};
+
+pauseButton.onclick=()=>{
+  if(playCtx){
+    if(playCtx.state==="running") playCtx.suspend();
+    else if(playCtx.state==="suspended") playCtx.resume();
+  }
+};
+
+stopButton.onclick=stopPlayback;
+</script>
+</body>
+</html>
