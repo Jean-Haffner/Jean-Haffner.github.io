@@ -197,6 +197,7 @@ analyse.onclick=async()=>{
 
   const target=parseFloat(service.value);
   let gainDB=target-g.integrated;
+  if (gainDB > 0 - (dBTP + 1)) gainDB = 0 - (dBTP + 1);
   if(service.selectedOptions[0].text.toLowerCase().includes("youtube") && gainDB>0) gainDB=0;
 
   normalisedGain=Math.pow(10,gainDB/20);
