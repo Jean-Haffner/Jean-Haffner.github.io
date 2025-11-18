@@ -233,18 +233,7 @@ playButton.onclick=()=>{
 
   const g=playCtx.createGain(); g.gain.value=normalisedGain;
 
-  const sh=playCtx.createWaveShaper();
-  sh.curve=(()=>{
-    const t=0.995,N=2048,c=new Float32Array(N);
-    for(let i=0;i<N;i++){
-      const x=i/(N-1)*2-1, ax=Math.abs(x);
-      c[i]=ax<=t?x:Math.sign(x)*(t+(ax-t)/(1+10*(ax-t)));
-    }
-    return c;
-  })();
-  sh.oversample="4x";
-
-  playSrc.connect(g).connect(sh).connect(playCtx.destination);
+  playSrc.connect(g).connect(playCtx.destination);
   playSrc.start();
 };
 
