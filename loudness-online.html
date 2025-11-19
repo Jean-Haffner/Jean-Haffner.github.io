@@ -52,14 +52,18 @@ let decoded=null, playCtx=null, playSrc=null, normalisedGain=1; result=false;
 document.getElementById("year").textContent = new Date().getFullYear();
 
 /* ===================== Highlight helpers ===================== */
-function highlightIf(value, threshold, unit){
-  return value > threshold ? `<span style="color:red">⚠️ ${value.toFixed(2)} ${unit}</span>` : `${value.toFixed(2)} ${unit}`;
+function highlightMax(value, threshold, unit, color="red"){
+  return value > threshold ? `<span style="color:${color}">⚠️ ${value.toFixed(2)} ${unit}</span>` : `${value.toFixed(2)} ${unit}`;
 }
 
 function highlightLRA(value, lowThreshold=4, highThreshold=20, unit='LU'){
   if(value < lowThreshold) return `<span style="color:orange">⚠️ ${value.toFixed(2)} ${unit}</span>`;
   else if(value > highThreshold) return `<span style="color:orange">⚠️ ${value.toFixed(2)} ${unit}</span>`;
   else return `${value.toFixed(2)} ${unit}`;
+}
+
+function highlightPost(value, threshold, unit){
+  return value < threshold ? `<span style="color:red">${value.toFixed(2)} ${unit}</span>` : `${value.toFixed(2)} ${unit}`;
 }
 
 /* ===================== Result ===================== */
@@ -195,9 +199,15 @@ analyse.onclick=async()=>{
   const st=await shortTermLUFS(decoded);
   const LRA=loudnessRange(st);
 
-  const target=parseFloat(service.value);
-  let gainDB=target-g.integrated;
-  if (gainDB > 0 - (dBTP + 1)) gainDB = 0 - (dBTP + 1);
+  const lTarget=parseFloat(service.value);
+  const pTarget=-1;
+
+  let gainDB=lTarget-g.integrated;
+  let maxGainDB=Math.abs(pTarget-dBTP);
+
+  if(gainDB > 0 && gainDB > maxGainDB) gainDB=maxGainDB;
+  if(dBTP+gainDB > pTarget) gainDB=0;
+  if(dBTP > pTarget) gainDB=gainDB-maxGainDB;
   if(service.selectedOptions[0].text.toLowerCase().includes("youtube") && gainDB>0) gainDB=0;
   if(service.selectedOptions[0].text.toLowerCase().includes("soundcloud") && gainDB>0) gainDB=0;
 
@@ -205,16 +215,16 @@ analyse.onclick=async()=>{
   normalisedGain=Math.pow(10,gainDB/20);
 
   out.innerHTML=
-`Integrated loudness: ${highlightIf(g.integrated,target+1,'LUFS')}
-True-peak: ${highlightIf(dBTP,-1,'dBTP')}
+`Integrated loudness: ${highlightMax(g.integrated,lTarget+1,'LUFS','orange')}
+True-peak: ${highlightMax(dBTP,pTarget,'dBTP','red')}
 Loudness range (LRA): ${highlightLRA(LRA)}
 
-Target: ${target.toFixed(2)} LUFS
-Applied gain: ${gainDB.toFixed(2)} dB
+Target: ${lTarget.toFixed(2)} LUFS
+Applied gain: <span style="color:blue">${gainDB.toFixed(2)} dB</span>
 
-<b>Post processing: ${ppl.toFixed(2)} LUFS</b>
+<b>Post processing: ${highlightPost(ppl,lTarget-5,'LUFS')}</b>
 
-${approvalCheck(target,g.integrated,dBTP,LRA)} Ready to preview.`;
+${approvalCheck(lTarget,g.integrated,dBTP,LRA)} Ready to preview.`;
 };
 
 /* ===================== Play / Pause / Stop ===================== */
