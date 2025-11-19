@@ -16,7 +16,7 @@
 <body>
 
 <h1>Online Loudness Performance Check</h1>
-<h3>Preview BS.1770-4 Loudness & True-Peak...</h3>
+<h3>Meter the loudness normalization of your audio tracks...</h3>
 
 <div class="row">
   <input id="file" type="file" accept="audio/*">
@@ -199,6 +199,7 @@ analyse.onclick=async()=>{
   const st=await shortTermLUFS(decoded);
   const LRA=loudnessRange(st);
 
+  out.textContent="Computing levels…";
   const lTarget=parseFloat(service.value);
   const pTarget=-1;
 
