@@ -6,7 +6,7 @@
 <title>Audio → Full-Scale Spectrogram</title>
   <link rel="stylesheet" href="css/styles.css" />
 <style>
-body{font-family:system-ui,Segoe UI,Roboto,Arial;margin:24px auto;color:#fff;background:#1a1a1a;max-width:900px}
+body{font-family:system-ui,Segoe UI,Roboto,Arial;margin:24px auto;max-width:900px}
 input,button,select{font-size:14px;padding:6px 10px;margin:4px}
 #status{margin-top:12px;min-height:20px}
 .progress{background:#333;height:8px;border-radius:4px;margin-top:8px;overflow:hidden}
@@ -14,7 +14,6 @@ input,button,select{font-size:14px;padding:6px 10px;margin:4px}
 canvas{image-rendering:pixelated;border:1px solid #ddd;margin-top:12px;display:block}
 .info{color:#aaa;font-size:12px;margin-top:8px}
 label{margin-right:8px;color:#ccc}
-.controls{margin:16px 0}
 .download-row{display:flex;gap:12px;margin-top:12px;flex-wrap:wrap}
 </style>
 </head>
@@ -38,7 +37,7 @@ label{margin-right:8px;color:#ccc}
     <option value="izotope">Cyan → Orange</option>
     <option value="stylized" selected>Black & Green</option>
   </select>
-  <button id="go">Process & Export</button>
+  <button id="go">Process Audio</button>
 </div>
 
 <div id="status"></div>
