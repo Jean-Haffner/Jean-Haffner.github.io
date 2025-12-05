@@ -192,7 +192,7 @@ document.getElementById("go").addEventListener("click", async () => {
     const hann = makeHann(fftSize);
     const hannCorrection = 1.63;
     const nyquist = sr >>> 1;
-    const freqEnergy = new Float64Array(nyquist);
+    const freqEnergy = new Float64Array(nyquist+1);
     const real = new Float64Array(fftSize), imag = new Float64Array(fftSize);
 
     const totalFrames = Math.floor((len - fftSize) / hop) + 1;
@@ -212,7 +212,7 @@ document.getElementById("go").addEventListener("click", async () => {
         const hzEnd = (k+1) * binHz;
         const lo = Math.floor(hzStart);
         const hi = Math.floor(hzEnd);
-        for(let hz = lo; hz <= hi && hz < nyquist; hz++){
+        for(let hz = lo; hz <= hi && hz <= nyquist; hz++){
           const hzLower = Math.max(hz, hzStart);
           const hzUpper = Math.min(hz+1, hzEnd);
           const overlap = Math.max(0, hzUpper - hzLower);
@@ -233,7 +233,7 @@ document.getElementById("go").addEventListener("click", async () => {
     status.textContent = "Rendering…";
 
     let maxMag = 0;
-    for(let i=0;i<nyquist;i++) if(freqEnergy[i] > maxMag) maxMag = freqEnergy[i];
+    for(let i=0;i<=nyquist;i++) if(freqEnergy[i] > maxMag) maxMag = freqEnergy[i];
     const noiseFloor = maxMag * 1e-6;
     const height = nyquist, width = 1;
     const canvas = document.createElement("canvas");
