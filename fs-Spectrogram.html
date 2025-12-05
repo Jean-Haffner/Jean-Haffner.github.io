@@ -271,7 +271,7 @@ document.getElementById("go").addEventListener("click", async () => {
     pngA.href = canvas.toDataURL("image/png");
     pngA.download = f.name.replace(/\.[^.]+$/,"") + `_freqsum_1x${nyquist}.png`;
     pngA.textContent = "Download PNG";
-    pngA.style.cssText = "padding:8px 12px;background:#4CAF50;color:#fff;border-radius:4px;text-decoration:none";
+    pngA.style.cssText = "padding:8px 12px;background:#449d48;color:#fff;border-radius:4px;text-decoration:none";
 
     const lines = ["Frequency (Hz)\t|\tGain (dB)", "________________________________________"];
     for(let hz=0; hz<nyquist; hz++){
@@ -285,7 +285,7 @@ document.getElementById("go").addEventListener("click", async () => {
     txtA.href = txtURL;
     txtA.download = f.name.replace(/\.[^.]+$/,"") + `_freqsum_${nyquist}Hz.txt`;
     txtA.textContent = "Download TXT";
-    txtA.style.cssText = "padding:8px 12px;background:#4CAF50;color:#fff;border-radius:4px;text-decoration:none";
+    txtA.style.cssText = "padding:8px 12px;background:#449d48;color:#fff;border-radius:4px;text-decoration:none";
 
     const dlRow = document.createElement("div");
     dlRow.className = "download-row";
