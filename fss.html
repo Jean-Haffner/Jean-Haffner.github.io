@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Audio → Full-Scale Spectrogram</title>
+  <link rel="stylesheet" href="css/styles.css" />
+<style>
+body{font-family:system-ui,Segoe UI,Roboto,Arial;margin:24px auto;color:#fff;background:#1a1a1a;max-width:900px}
+input,button,select{font-size:14px;padding:6px 10px;margin:4px}
+#status{margin-top:12px;min-height:20px}
+.progress{background:#333;height:8px;border-radius:4px;margin-top:8px;overflow:hidden}
+.progress-bar{background:#4CAF50;height:100%;width:0;transition:width 0.2s}
+canvas{image-rendering:pixelated;border:1px solid #ddd;margin-top:12px;display:block}
+.info{color:#aaa;font-size:12px;margin-top:8px}
+label{margin-right:8px;color:#ccc}
+.controls{margin:16px 0}
+.download-row{display:flex;gap:12px;margin-top:12px;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<h2>Audio → Full-Scale Spectrogram</h2>
+
+<div class="controls">
+  <input type="file" id="file" accept="audio/*"/>
+  <label for="fftSize">FFT size</label>
+  <select id="fftSize">
+    <option>4096</option>
+    <option>8192</option>
+    <option selected>16384</option>
+    <option>32768</option>
+    <option>65536</option>
+    <option>131072</option>
+  </select>
+  <label for="colormap">Colour map</label>
+  <select id="colormap">
+    <option value="grey">Greyscale</option>
+    <option value="izotope">Cyan → Orange</option>
+    <option value="stylized" selected>Black & Green</option>
+  </select>
+  <button id="go">Process & Export</button>
+</div>
+
+<div id="status"></div>
+<div class="progress" id="progressWrap" style="display:none">
+  <div class="progress-bar" id="progressBar"></div>
+</div>
+<div class="info" id="info"></div>
+<div id="canvasWrap"></div>
+
+<script>
+function fft(real, imag){
+  const n=real.length, levels=Math.floor(Math.log2(n));
+  for(let i=0;i<n;i++){
+    let j=0;
+    for(let k=0;k<levels;k++) j=(j<<1)|((i>>>k)&1);
+    if(j>i){[real[i],real[j]]=[real[j],real[i]];[imag[i],imag[j]]=[imag[j],imag[i]];}
+  }
+  for(let size=2;size<=n;size<<=1){
+    const half=size>>>1, step=n/size;
+    for(let i=0;i<n;i+=size)
+      for(let j=0;j<half;j++){
+        const k=j*step, ang=-2*Math.PI*k/n, wr=Math.cos(ang), wi=Math.sin(ang);
+        const l=i+j, r=l+half;
+        const tre=wr*real[r]-wi*imag[r], tim=wr*imag[r]+wi*real[r];
+        real[r]=real[l]-tre; imag[r]=imag[l]-tim;
+        real[l]+=tre; imag[l]+=tim;
+      }
+  }
+}
+function makeHann(N){const w=new Float32Array(N); for(let i=0;i<N;i++) w[i]=0.5*(1-Math.cos(2*Math.PI*i/(N-1))); return w;}
+
+const colormaps={
+  grey:v=>[v,v,v],
+  izotope:v=>{
+    if(v<0.2){const t=v/0.2;return[0,0,t*0.3];}
+    else if(v<0.4){const t=(v-0.2)/0.2;return[t*0.4,t*0.15,0.3-t*0.3];}
+    else if(v<0.6){const t=(v-0.4)/0.2;return[0.4+t*0.6,0.15+t*0.35,0];}
+    else if(v<0.8){const t=(v-0.6)/0.2;return[1,0.5+t*0.5,0];}
+    else{const t=(v-0.8)/0.2;return[1,1,t];}
+  },
+  stylized:v=>{
+    if(v<0.33){const t=v/0.33;return[0,t*0.3,0];}
+    else if(v<0.66){const t=(v-0.33)/0.33;return[0,0.3+t*0.5,0];}
+    else{const t=(v-0.66)/0.34;return[t,0.8+t*0.2,t];}
+  }
+};
+
+/* progress helper */
+function updateProgress(pct){ document.getElementById("progressBar").style.width = pct + "%"; }
+
+/* ---------- Sample-rate detector (WAV, Ogg/Vorbis, MP3) ---------- */
+async function detectSampleRate(arrayBuffer, name){
+  const dv = new DataView(arrayBuffer);
+  const u8 = new Uint8Array(arrayBuffer);
+  const text = (off, len) => String.fromCharCode.apply(null, u8.subarray(off, off+len));
+
+  // WAV (RIFF/WAVE) — look for 'fmt ' chunk and read uint32 LE sampleRate
+  if(text(0,4) === 'RIFF' && text(8,4) === 'WAVE'){
+    let offset = 12;
+    while(offset + 8 <= dv.byteLength){
+      const id = text(offset,4);
+      const size = dv.getUint32(offset+4, true);
+      if(id === 'fmt '){
+        // sampleRate at fmt chunk offset + 12 (little-endian)
+        if(size >= 16 && offset + 12 + 4 <= dv.byteLength){
+          const sr = dv.getUint32(offset + 12, true);
+          if(sr > 0) return sr;
+        }
+      }
+      offset += 8 + size + (size % 2); // pad
+    }
+  }
+
+  // Ogg Vorbis — find "vorbis" and read sample_rate at (pos + 11) as uint32 LE
+  let idx = arrayIndexOf(u8, asciiBytes('vorbis'));
+  if(idx !== -1){
+    const srOff = idx + 11;
+    if(srOff + 4 <= dv.byteLength){
+      const sr = dv.getUint32(srOff, true);
+      if(sr > 0) return sr;
+    }
+  }
+
+  // MP3 — scan for frame header and extract sampling rate index
+  for(let i=0;i+3<dv.byteLength;i++){
+    const b1 = u8[i], b2 = u8[i+1], b3 = u8[i+2];
+    if(b1 === 0xFF && (b2 & 0xE0) === 0xE0){
+      const versionBits = (b2 >> 3) & 0x03; // 00: MPEG2.5, 01: reserved, 10: MPEG2, 11: MPEG1
+      const samplingIdx = (b3 >> 2) & 0x03;
+      const mpegVersion = (versionBits === 3) ? 1 : (versionBits === 2 ? 2 : (versionBits === 0 ? 2.5 : null));
+      const rates = (mpegVersion === 1) ? [44100,48000,32000] : (mpegVersion === 2 ? [22050,24000,16000] : (mpegVersion === 2.5 ? [11025,12000,8000] : null));
+      if(rates && samplingIdx < rates.length) return rates[samplingIdx];
+    }
+  }
+
+  // fallback: unknown
+  return null;
+}
+
+function asciiBytes(s){ const a=new Uint8Array(s.length); for(let i=0;i<s.length;i++) a[i]=s.charCodeAt(i); return a; }
+function arrayIndexOf(hay, needle){
+  if(needle.length === 0) return -1;
+  outer: for(let i=0;i+needle.length<=hay.length;i++){
+    for(let j=0;j<needle.length;j++) if(hay[i+j]!==needle[j]) continue outer;
+    return i;
+  }
+  return -1;
+}
+
+/* ---------- Main processing ---------- */
+document.getElementById("go").addEventListener("click", async () => {
+  const f = document.getElementById("file").files[0];
+  if(!f) return;
+  const fftSize = Number(document.getElementById("fftSize").value);
+  const colormap = document.getElementById("colormap").value;
+  const status = document.getElementById("status");
+  const info = document.getElementById("info");
+  const progressWrap = document.getElementById("progressWrap");
+
+  status.textContent = "Reading file…";
+  progressWrap.style.display = "block";
+  updateProgress(0);
+
+  try{
+    const buf = await f.arrayBuffer();
+    updateProgress(10);
+
+    const detectedSR = await detectSampleRate(buf, f.name);
+    updateProgress(15);
+
+    const actx = new (window.AudioContext || window.webkitAudioContext)();
+    const decoded = await actx.decodeAudioData(buf.slice(0));
+    actx.close();
+    updateProgress(25);
+
+    // prefer detected sample-rate (works in Firefox), else use decoded.sampleRate
+    const sr = detectedSR || decoded.sampleRate;
+    const len = decoded.length;
+    const duration = len / sr;
+
+    if(len < fftSize) throw new Error(`File too short (${len} samples < ${fftSize})`);
+
+    status.textContent = `Mixing to mono… (detected SR: ${detectedSR||'n/a'}, decoded SR: ${decoded.sampleRate})`;
+    const mono = new Float32Array(len);
+    for(let c=0;c<decoded.numberOfChannels;c++){
+      const d = decoded.getChannelData(c);
+      for(let i=0;i<len;i++) mono[i] += d[i]/decoded.numberOfChannels;
+    }
+    updateProgress(35);
+
+    const hop = fftSize >>> 1;
+    const hann = makeHann(fftSize);
+    const hannCorrection = 1.63;
+    const nyquist = sr >>> 1;
+    const freqEnergy = new Float64Array(nyquist);
+    const real = new Float64Array(fftSize), imag = new Float64Array(fftSize);
+
+    const totalFrames = Math.floor((len - fftSize) / hop) + 1;
+    let frames = 0;
+    status.textContent = "Computing FFT…";
+
+    for(let start=0; start+fftSize<=len; start+=hop){
+      for(let i=0;i<fftSize;i++){ real[i] = mono[start+i] * hann[i]; imag[i] = 0; }
+      fft(real,imag);
+
+      const bins = fftSize >>> 1;
+      const binHz = sr / fftSize;
+
+      for(let k=0;k<=bins;k++){
+        const mag = Math.hypot(real[k], imag[k]) * hannCorrection;
+        const hzStart = k * binHz;
+        const hzEnd = (k+1) * binHz;
+        const lo = Math.floor(hzStart);
+        const hi = Math.floor(hzEnd);
+        for(let hz = lo; hz <= hi && hz < nyquist; hz++){
+          const hzLower = Math.max(hz, hzStart);
+          const hzUpper = Math.min(hz+1, hzEnd);
+          const overlap = Math.max(0, hzUpper - hzLower);
+          freqEnergy[hz] += mag * overlap;
+        }
+      }
+
+      frames++;
+      if(frames % 50 === 0){
+        const pct = 35 + Math.floor(55 * frames / totalFrames);
+        updateProgress(pct);
+        status.textContent = `Processing frame ${frames}/${totalFrames}`;
+        await new Promise(r => setTimeout(r,0));
+      }
+    }
+
+    updateProgress(90);
+    status.textContent = "Rendering…";
+
+    let maxMag = 0;
+    for(let i=0;i<nyquist;i++) if(freqEnergy[i] > maxMag) maxMag = freqEnergy[i];
+    const noiseFloor = maxMag * 1e-6;
+    const height = nyquist, width = 1;
+    const canvas = document.createElement("canvas");
+    canvas.width = width; canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    const img = ctx.createImageData(width, height);
+
+    for(let y=0;y<height;y++){
+      const hz = height - 1 - y;
+      const mag = Math.max(freqEnergy[hz], noiseFloor);
+      const db = 20 * Math.log10(mag / maxMag);
+      const v = Math.max(0, Math.min(1, (db + 120) / 120));
+      const [r,g,b] = colormaps[colormap](v);
+      const idx = y*4;
+      img.data[idx] = Math.round(255*r);
+      img.data[idx+1] = Math.round(255*g);
+      img.data[idx+2] = Math.round(255*b);
+      img.data[idx+3] = 255;
+    }
+    ctx.putImageData(img,0,0);
+
+    const wrap = document.getElementById("canvasWrap");
+    wrap.innerHTML = "";
+
+    const vis = document.createElement("canvas");
+    vis.width = wrap.clientWidth || 900;
+    vis.height = Math.min(height, 500);
+    const vctx = vis.getContext("2d");
+    vctx.imageSmoothingEnabled = false;
+    vctx.drawImage(canvas,0,0,vis.width,vis.height);
+    wrap.appendChild(vis);
+
+    /* downloads */
+    const pngA = document.createElement("a");
+    pngA.href = canvas.toDataURL("image/png");
+    pngA.download = f.name.replace(/\.[^.]+$/,"") + `_freqsum_1x${nyquist}.png`;
+    pngA.textContent = "Download PNG";
+    pngA.style.cssText = "padding:8px 12px;background:#4CAF50;color:#fff;border-radius:4px;text-decoration:none";
+
+    const lines = ["Frequency (Hz)\t|\tGain (dB)", "________________________________________"];
+    for(let hz=0; hz<nyquist; hz++){
+      const mag = freqEnergy[hz] + 1e-12;
+      const db = 20 * Math.log10(mag / maxMag);
+      lines.push(`${hz.toFixed(6)}\t|\t${db.toFixed(6)}`);
+    }
+    const txtBlob = new Blob([lines.join("\n")], {type:"text/plain"});
+    const txtURL = URL.createObjectURL(txtBlob);
+    const txtA = document.createElement("a");
+    txtA.href = txtURL;
+    txtA.download = f.name.replace(/\.[^.]+$/,"") + `_freqsum_${nyquist}Hz.txt`;
+    txtA.textContent = "Download TXT";
+    txtA.style.cssText = "padding:8px 12px;background:#4CAF50;color:#fff;border-radius:4px;text-decoration:none";
+
+    const dlRow = document.createElement("div");
+    dlRow.className = "download-row";
+    dlRow.appendChild(pngA);
+    dlRow.appendChild(txtA);
+    wrap.appendChild(dlRow);
+
+    info.textContent = `Sample rate: ${sr} Hz | Duration: ${duration.toFixed(2)} s | Frames: ${frames}`;
+    status.textContent = "Done";
+    updateProgress(100);
+
+  }catch(err){
+    status.textContent = "Error: " + (err && err.message ? err.message : err);
+    progressWrap.style.display = "none";
+  }
+});
+</script>
+</body>
+</html>
