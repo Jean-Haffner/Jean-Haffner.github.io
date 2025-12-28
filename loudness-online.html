@@ -3,22 +3,102 @@
 <head>
 <meta charset="utf-8">
 <title>Online Loudness Preview</title>
-  <link rel="stylesheet" href="css/styles.css" />
+<link rel="icon" href="assets/favicon.png" type="image/png">
+<link rel="stylesheet" href="css/styles.css" />
 <style>
-  body{font-family:system-ui,Segoe UI;max-width:900px;margin:24px auto;}
-  .row{display:flex;gap:1rem;align-items:center;margin-bottom:0.7rem;}
-  button{padding:0.4rem 0.7rem}
-  pre{background:#276314;padding:0.8rem;border-radius:6px;white-space:pre-wrap}
-  label{font-weight:600}
-  p{color: #999; font-size: 0.9rem;}
+.container {
+  max-width: 960px;
+  margin: 24px auto;
+  padding: 2rem;
+  background: rgba(26, 26, 26, 0.95);
+  border-radius: 8px;
+}
+h1 {
+  border-bottom: 2px solid #6ab534;
+  display: inline-block;
+  margin-bottom: 1rem;
+  color: #f4f4f4;
+}
+h3 {
+  color: #bbb;
+  font-weight: 400;
+  margin-bottom: 2rem;
+}
+.form-row {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+label {
+  color: #bbb;
+  font-weight: 500;
+}
+input[type="file"],
+select {
+  background: #111;
+  color: #f4f4f4;
+  border: 1px solid #333;
+  padding: 0.5rem;
+  border-radius: 4px;
+  font-family: 'Montserrat', sans-serif;
+}
+button {
+  background: #ffcc00;
+  color: #0a0a0a;
+  padding: 0.5rem 1.2rem;
+  border: none;
+  border-radius: 20px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.3s, color 0.3s;
+  font-family: 'Montserrat', sans-serif;
+}
+button:hover {
+  background: #e6b800;
+  color: #ffffff;
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.playback-controls {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+.playback-controls button {
+  background: #6ab534;
+}
+.playback-controls button:hover {
+  background: #aaaaaa;
+}
+pre {
+  background: #0d0d0d;
+  color: #6ab534;
+  padding: 1rem;
+  border-radius: 6px;
+  white-space: pre-wrap;
+  border: 1px solid #333;
+  font-family: 'Courier New', monospace;
+  margin-top: 1.5rem;
+}
+p {
+  color: #999;
+  font-size: 0.9rem;
+  text-align: center;
+  margin-top: 2rem;
+}
 </style>
 </head>
 <body>
 
+<div class="container">
 <h1>Online Loudness Performance Check</h1>
 <h3>Meter the loudness normalization of your audio tracks...</h3>
 
-<div class="row">
+<div class="form-row">
   <input id="file" type="file" accept="audio/*">
   <label for="service">Choose service:</label>
   <select id="service">
@@ -29,17 +109,18 @@
     <option value="-14">SoundCloud (reduce only, ≈−14 LUFS)</option>
     <option value="-23">EBU R128 (-23 LUFS)</option>
   </select>
-  <button id="analyse">Analyse</button>
+  <button id="analyse" disabled>Analyse</button>
 </div>
 
-<div class="row">
-  <button id="playButton">Play</button>
-  <button id="pauseButton">Pause</button>
-  <button id="stopButton">Stop</button>
+<div class="playback-controls">
+  <button id="playButton" disabled>Play</button>
+  <button id="pauseButton" disabled>Pause</button>
+  <button id="stopButton" disabled>Stop</button>
 </div>
 
 <pre id="out">Load a file.</pre>
 <p id="credits">&copy; <span id="year"></span> Jean Haffner. All rights reserved.</p>
+</div>
 
 <script>
 /* ===================== BS.1770-4 K-weighting (48kHz) ===================== */
@@ -51,6 +132,17 @@ const STAGE2_A=[1,-1.99004745483398,0.99007225036621];
 /* ===================== Globals ===================== */
 let decoded=null, playCtx=null, playSrc=null, normalisedGain=1; result=false;
 document.getElementById("year").textContent = new Date().getFullYear();
+
+const fileInput = document.getElementById("file");
+const analyseBtn = document.getElementById("analyse");
+const playButton = document.getElementById("playButton");
+const pauseButton = document.getElementById("pauseButton");
+const stopButton = document.getElementById("stopButton");
+
+// Enable analyse button only when file is selected
+fileInput.addEventListener("change", () => {
+  analyseBtn.disabled = fileInput.files.length === 0;
+});
 
 /* ===================== Highlight helpers ===================== */
 function highlightMax(value, threshold, unit, color="red"){
@@ -85,8 +177,12 @@ file.onchange=async()=>{
   out.textContent="Decoding…";
   const arr=await f.arrayBuffer();
   const ctx=new AudioContext();
-  try{ decoded=await ctx.decodeAudioData(arr.slice(0)); 
-    out.textContent=`Loaded: ${f.name} (${decoded.duration.toFixed(2)} s)`; 
+  try{ 
+    decoded=await ctx.decodeAudioData(arr.slice(0)); 
+    out.textContent=`Loaded: ${f.name} (${decoded.duration.toFixed(2)} s)`;
+    playButton.disabled = false;
+    pauseButton.disabled = false;
+    stopButton.disabled = false;
   }finally{ctx.close();}
 };
 
