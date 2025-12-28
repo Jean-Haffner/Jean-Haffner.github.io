@@ -54,6 +54,10 @@ button:hover {
   background: #e6b800;
   color: #ffffff;
 }
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 pre {
   background: #0d0d0d;
   color: #6ab534;
@@ -104,7 +108,7 @@ p {
   <option value="-16">-16 LUFS (Apple Music)</option>
 </select><br>
 
-<button id="run">Process</button>
+<button id="run" disabled>Process</button>
 
 <pre id="log">Idle.</pre>
 <p id="credits">&copy; <span id="year"></span> Jean Haffner. All rights reserved.</p>
@@ -112,6 +116,17 @@ p {
 <script>
 const out=document.getElementById("log");
 const log=t=>out.textContent+=t+"\n";
+
+const audioInput = document.getElementById("audioFile");
+const refInput   = document.getElementById("refFile");
+const runBtn     = document.getElementById("run");
+
+function updateRunState() {
+  runBtn.disabled = !audioInput.files.length || !refInput.files.length;
+}
+
+audioInput.addEventListener("change", updateRunState);
+refInput.addEventListener("change", updateRunState);
 
 // K-weighting filters (48kHz)
 const STAGE1_B=[1.53512485958697,-2.69169618940638,1.19839281085285];
