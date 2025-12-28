@@ -353,7 +353,7 @@ run.onclick=async()=>{
   const finalBuf = applyGain(outBuf, finalGainLinear);
 
   log("Exporting WAV…");
-  const a=document.createElement("a"); a.href=URL.createObjectURL(exportWav(finalBuf)); a.download="spectral_match_eq.wav"; a.click();
+  const a=document.createElement("a"); a.href=URL.createObjectURL(exportWav(finalBuf)); a.download=af.name.replace(/\.[^/.]+$/, "")+" (EqMatched).wav"; a.click();
   log("Done.");
 };
 </script>
