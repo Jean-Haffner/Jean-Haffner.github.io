@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Match to Frequency-Table</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="assets/favicon.png" type="image/png">
+<link rel="stylesheet" href="css/styles.css">
+<style>
+.container {
+  max-width: 960px;
+  margin: 24px auto;
+  padding: 2rem;
+  background: rgba(26, 26, 26, 0.95);
+  border-radius: 8px;
+}
+h2 {
+  border-bottom: 2px solid #6ab534;
+  display: inline-block;
+  margin-bottom: 1.5rem;
+  color: #f4f4f4;
+}
+.form-row {
+  margin: 1rem 0;
+}
+label {
+  display: inline-block;
+  margin-right: 0.5rem;
+  color: #bbb;
+  font-weight: 500;
+}
+input[type="file"],
+select {
+  background: #111;
+  color: #f4f4f4;
+  border: 1px solid #333;
+  padding: 0.5rem;
+  border-radius: 4px;
+  font-family: 'Montserrat', sans-serif;
+}
+button {
+  background: #ffcc00;
+  color: #0a0a0a;
+  padding: 0.6rem 1.5rem;
+  border: none;
+  border-radius: 20px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.3s, color 0.3s;
+  font-family: 'Montserrat', sans-serif;
+  margin-top: 1rem;
+}
+button:hover {
+  background: #e6b800;
+  color: #ffffff;
+}
+pre {
+  background: #0d0d0d;
+  color: #6ab534;
+  padding: 1rem;
+  border-radius: 6px;
+  white-space: pre-wrap;
+  border: 1px solid #333;
+  font-family: 'Courier New', monospace;
+  margin-top: 1.5rem;
+}
+</style>
+</head>
+<body>
+
+<div class="container">
+<h2>Match to Frequency-Table</h2>
+
+<div class="form-row">
+  <label>Audio File:</label>
+  <input type="file" id="audioFile" accept="audio/*">
+</div>
+
+<div class="form-row">
+  <label>Reference Table:</label>
+  <input type="file" id="refFile" accept=".txt">
+</div>
+
+<div class="form-row">
+  <label for="fftSize">FFT size:</label>
+  <select id="fftSize">
+  <option value="4096">4096</option>
+  <option value="8192">8192</option>
+  <option value="16384" selected>16384</option>
+  <option value="32768">32768</option>
+  <option value="65536">65536</option>
+  <option value="131072">131072</option>
+</select><br>
+
+<label for="targetLUFS">Target LUFS:</label>
+<select id="targetLUFS">
+  <option value="-14" selected>-14 LUFS (Spotify/Tidal)</option>
+  <option value="-16">-16 LUFS (Apple Music)</option>
+</select><br>
+
+<button id="run">Process</button>
+
+<pre id="log">Idle.</pre>
+
+<script>
+const out=document.getElementById("log");
+const log=t=>out.textContent+=t+"\n";
+
+// K-weighting filters (48kHz)
+const STAGE1_B=[1.53512485958697,-2.69169618940638,1.19839281085285];
+const STAGE1_A=[1,-1.69065929318241,0.73248077421585];
+const STAGE2_B=[1,-2,1];
+const STAGE2_A=[1,-1.99004745483398,0.99007225036621];
+
+/* ===== FFT / IFFT ===== */
+function fft(re,im){const n=re.length,L=Math.log2(n)|0;for(let i=0;i<n;i++){let j=0;for(let k=0;k<L;k++)j=(j<<1)|((i>>k)&1);if(j>i){[re[i],re[j]]=[re[j],re[i]];[im[i],im[j]]=[im[j],im[i]];}}for(let s=2;s<=n;s<<=1){const h=s>>1,step=n/s;for(let i=0;i<n;i+=s)for(let j=0;j<h;j++){const k=j*step,a=-2*Math.PI*k/n,wr=Math.cos(a),wi=Math.sin(a);const l=i+j,r=l+h,tr=wr*re[r]-wi*im[r],ti=wr*im[r]+wi*re[r];re[r]=re[l]-tr;im[r]=im[l]-ti;re[l]+=tr;im[l]+=ti;}}}
+function ifft(re,im){const n=re.length;for(let i=0;i<n;i++)im[i]=-im[i];fft(re,im);for(let i=0;i<n;i++){re[i]/=n;im[i]=-im[i]/n;}}
+const hann=N=>Float32Array.from({length:N},(_,i)=>0.5*(1-Math.cos(2*Math.PI*i/(N-1))));
+
+async function renderKWeighted48(buf){
+  const sr=48000;
+  const L=Math.ceil(buf.duration*sr);
+  const off=new OfflineAudioContext(buf.numberOfChannels,L,sr);
+  const src=off.createBufferSource(); src.buffer=buf;
+  const s1=off.createIIRFilter(STAGE1_B,STAGE1_A);
+  const s2=off.createIIRFilter(STAGE2_B,STAGE2_A);
+  src.connect(s1).connect(s2).connect(off.destination);
+  src.start();
+  return await off.startRendering();
+}
+
+function blockEnergies48(buf){
+  const sr=buf.sampleRate, block=Math.round(0.4*sr), hop=Math.round(0.1*sr);
+  const nCh=buf.numberOfChannels, N=buf.length;
+  const w=nCh===1?[1]:nCh===2?[1,1]:nCh===5?[1,1,1,1.41,1.41]:Array(nCh).fill(1);
+  const out=[];
+  for(let s=0;s+block<=N;s+=hop){
+    let sum=0;
+    for(let ch=0;ch<nCh;ch++){
+      const d=buf.getChannelData(ch);
+      let x=0; for(let i=0;i<block;i++) x+=d[s+i]*d[s+i];
+      sum+=w[ch]*(x/block);
+    }
+    out.push(sum);
+  }
+  return out;
+}
+
+const toLU=e=>-0.691+10*Math.log10(e+1e-12);
+
+function integrateBS1770(E){
+  const LU=E.map(toLU);
+  const abs=E.filter((e,i)=>LU[i]>-70);
+  if(!abs.length) return {integrated:-Infinity};
+  const meanAbs=abs.reduce((a,b)=>a+b,0)/abs.length;
+  const ungated=toLU(meanAbs);
+  const th=ungated-10;
+  const rel=E.filter((e,i)=>LU[i]>th);
+  if(!rel.length) return {integrated:ungated};
+  const meanRel=rel.reduce((a,b)=>a+b,0)/rel.length;
+  return {integrated:toLU(meanRel)};
+}
+
+async function measureLUFS(buf){
+  const kw=await renderKWeighted48(buf);
+  const E=blockEnergies48(kw);
+  const g=integrateBS1770(E);
+  return g.integrated;
+}
+
+function applyGain(buf, gainLinear){
+  const normalized = new AudioBuffer({
+    length: buf.length,
+    sampleRate: buf.sampleRate,
+    numberOfChannels: buf.numberOfChannels
+  });
+  for(let ch=0; ch<buf.numberOfChannels; ch++){
+    const src = buf.getChannelData(ch);
+    const dst = normalized.getChannelData(ch);
+    for(let i=0; i<src.length; i++){
+      dst[i] = src[i] * gainLinear;
+    }
+  }
+  return normalized;
+}
+
+function longTermPower(sig,fftSize){
+  const hop=fftSize>>1,w=hann(fftSize);
+  const bins=fftSize>>1;
+  const P=new Float64Array(bins+1);
+  const re=new Float64Array(fftSize),im=new Float64Array(fftSize);
+  let frames=0;
+  for(let s=0;s+fftSize<=sig.length;s+=hop){
+    for(let i=0;i<fftSize;i++){re[i]=sig[s+i]*w[i];im[i]=0;}
+    fft(re,im);
+    for(let k=0;k<=bins;k++) P[k]+=re[k]*re[k]+im[k]*im[k];
+    frames++;
+  }
+  for(let i=0;i<P.length;i++) P[i]/=frames;
+  return P;
+}
+
+function smooth(a,r=6){const o=a.slice();for(let i=0;i<a.length;i++){let s=0,n=0;for(let j=-r;j<=r;j++)if(i+j>=0&&i+j<a.length){s+=a[i+j];n++;}o[i]=s/n;}return o;}
+
+function interpolateRef(refTable, nBins, sampleRate, fftSize){
+  const binToHz = k => k*sampleRate/fftSize;
+  const ref = new Float64Array(nBins+1);
+  
+  for(let k=0;k<=nBins;k++){
+    const hz = binToHz(k);
+    let i=0; 
+    while(i<refTable.length-1 && refTable[i].hz<hz) i++;
+    
+    if(i===0){
+      ref[k]=refTable[0].power;
+    } else if(i>=refTable.length){
+      ref[k]=refTable[refTable.length-1].power;
+    } else {
+      const h0=refTable[i-1].hz,h1=refTable[i].hz;
+      const p0=refTable[i-1].power,p1=refTable[i].power;
+      const t=(hz-h0)/(h1-h0);
+      ref[k]=p0+(p1-p0)*t;
+    }
+  }
+  return ref;
+}
+
+function exportWav(buf){const ch=buf.numberOfChannels,sr=buf.sampleRate,L=buf.length;const data=new Float32Array(L*ch);for(let c=0;c<ch;c++){const d=buf.getChannelData(c);for(let i=0;i<L;i++)data[i*ch+c]=d[i];}const ab=new ArrayBuffer(44+data.length*4); const dv=new DataView(ab); let o=0;const w=s=>{for(const c of s)dv.setUint8(o++,c.charCodeAt(0));};w("RIFF"); dv.setUint32(o,36+data.length*4,true); o+=4; w("WAVEfmt "); dv.setUint32(o,16,true); o+=4;dv.setUint16(o,3,true); o+=2; dv.setUint16(o,ch,true); o+=2; dv.setUint32(o,sr,true); o+=4; dv.setUint32(o,sr*ch*4,true); o+=4; dv.setUint16(o,ch*4,true); o+=2; dv.setUint16(o,32,true); o+=2;w("data"); dv.setUint32(o,data.length*4,true); o+=4; data.forEach(v=>{dv.setFloat32(o,v,true);o+=4;});return new Blob([ab],{type:"audio/wav"});}
+
+run.onclick=async()=>{
+  out.textContent="";
+  const af=audioFile.files[0], rf=refFile.files[0];
+  if(!af||!rf) return;
+  const fftSize=Number(document.getElementById("fftSize").value);
+  const targetLUFS=Number(document.getElementById("targetLUFS").value);
+
+  log("Decoding audio…");
+  const ctx=new AudioContext();
+  const buf=await ctx.decodeAudioData(await af.arrayBuffer());
+  const sampleRate=buf.sampleRate;
+  ctx.close();
+
+  log("Measuring LUFS…");
+  const currentLUFS = await measureLUFS(buf);
+  log(`Current: ${currentLUFS.toFixed(2)} LUFS`);
+  
+  const gainDB = targetLUFS - currentLUFS;
+  const gainLinear = Math.pow(10, gainDB/20);
+  log(`Normalizing: ${gainDB.toFixed(2)} dB gain`);
+  
+  const normalizedBuf = applyGain(buf, gainLinear);
+
+  log("Reading reference table…");
+  const lines = (await rf.text()).trim().split(/\r?\n/)
+    .filter(l=>l.includes("|"))
+    .filter(l=>{
+      const parts = l.split("|");
+      return !isNaN(parseFloat(parts[0])) && !isNaN(parseFloat(parts[1]));
+    });
+  const refTable = lines.map(l=>{
+    const parts = l.split("|").map(p=>p.trim());
+    const hz = parseFloat(parts[0]);
+    const dB = parseFloat(parts[1]);
+    return {hz, power: Math.pow(10, dB/10)};
+  });
+  
+  log(`Reference: ${refTable.length} points, ${refTable[0].hz} to ${refTable[refTable.length-1].hz} Hz`);
+
+  log("Computing source spectrum from normalized audio…");
+  const srcP=longTermPower(normalizedBuf.getChannelData(0),fftSize);
+  const nBins=srcP.length-1;
+
+  log("Interpolating reference to FFT bins…");
+  const ref = interpolateRef(refTable, nBins, sampleRate, fftSize);
+  
+  // Normalize BOTH spectra to their peaks for fair comparison
+  const refMax=Math.max(...ref.filter(v=>!isNaN(v) && isFinite(v)));
+  const srcMax=Math.max(...srcP);
+  for(let i=0; i<ref.length; i++) ref[i]/=refMax;
+  for(let i=0; i<srcP.length; i++) srcP[i]/=srcMax;
+
+  let G=new Float64Array(nBins+1),gMin=1e9,gMax=0;
+
+  for(let k=0;k<=nBins;k++){
+    G[k]=Math.sqrt((ref[k]+1e-12)/(srcP[k]+1e-12));
+    if(isNaN(G[k]) || !isFinite(G[k])) G[k]=1;
+    const dB=20*Math.log10(G[k]);
+    if(dB>12)G[k]=Math.pow(10,12/20);
+    if(dB<-12)G[k]=Math.pow(10,-12/20);
+    gMin=Math.min(gMin,G[k]); gMax=Math.max(gMax,G[k]);
+  }
+  G=smooth(G);
+
+  log(`Gain range: ${20*Math.log10(gMin).toFixed(1)} … ${20*Math.log10(gMax).toFixed(1)} dB`);
+  log("Applying EQ to original audio…");
+  
+  const outBuf=new AudioBuffer({length:buf.length,sampleRate:buf.sampleRate,numberOfChannels:buf.numberOfChannels});
+  for(let ch=0;ch<buf.numberOfChannels;ch++){
+    const hop=fftSize>>1,w=hann(fftSize);
+    
+    // Pad source with zeros for clean edges
+    const padded=new Float32Array(buf.length+fftSize);
+    const src=buf.getChannelData(ch);
+    padded.set(src,hop);
+    
+    const dst=outBuf.getChannelData(ch),norm=new Float64Array(padded.length);
+    const re=new Float64Array(fftSize),im=new Float64Array(fftSize);
+    
+    for(let s=0;s+fftSize<=padded.length;s+=hop){
+      for(let i=0;i<fftSize;i++){re[i]=padded[s+i]*w[i];im[i]=0;}
+      fft(re,im);
+      
+      for(let k=0;k<=nBins;k++){
+        re[k]*=G[k];
+        im[k]*=G[k];
+      }
+      for(let k=1;k<nBins;k++){
+        re[fftSize-k]*=G[k];
+        im[fftSize-k]*=G[k];
+      }
+      
+      ifft(re,im);
+      for(let i=0;i<fftSize;i++){
+        const idx=s+i;
+        if(idx<norm.length){
+          dst[Math.min(idx-hop,dst.length-1)]+=re[i]*w[i];
+          norm[idx]+=w[i]*w[i];
+        }
+      }
+    }
+    // Normalize and extract valid range
+    for(let i=0;i<dst.length;i++){
+      const normIdx=i+hop;
+      if(norm[normIdx]>1e-6) dst[i]/=norm[normIdx];
+    }
+  }
+
+  log("Measuring output LUFS…");
+  const outputLUFS = await measureLUFS(outBuf);
+  log(`Output: ${outputLUFS.toFixed(2)} LUFS`);
+  
+  const finalGainDB = targetLUFS - outputLUFS;
+  const finalGainLinear = Math.pow(10, finalGainDB/20);
+  log(`Final normalization: ${finalGainDB.toFixed(2)} dB gain`);
+  
+  const finalBuf = applyGain(outBuf, finalGainLinear);
+
+  log("Exporting WAV…");
+  const a=document.createElement("a"); a.href=URL.createObjectURL(exportWav(finalBuf)); a.download="spectral_match_eq.wav"; a.click();
+  log("Done.");
+};
+</script>
+</body>
+</html>
