@@ -92,6 +92,12 @@ p {
 </div>
 
 <div class="form-row">
+  <label for="matchPercent">Match Percent:</label>
+  <input type="range" id="matchPercent" min="1" max="100" value="80">
+  <span id="matchPercentVal">80%</span>
+</div>
+
+<div class="form-row">
   <label for="fftSize">FFT size:</label>
   <select id="fftSize">
   <option value="4096">4096</option>
@@ -120,6 +126,8 @@ const log=t=>out.textContent+=t+"\n";
 const audioInput = document.getElementById("audioFile");
 const refInput   = document.getElementById("refFile");
 const runBtn     = document.getElementById("run");
+const matchSlider = document.getElementById("matchPercent");
+const matchVal = document.getElementById("matchPercentVal");
 
 function updateRunState() {
   runBtn.disabled = !audioInput.files.length || !refInput.files.length;
@@ -127,6 +135,7 @@ function updateRunState() {
 
 audioInput.addEventListener("change", updateRunState);
 refInput.addEventListener("change", updateRunState);
+matchSlider.addEventListener("input", () => {matchVal.textContent=matchSlider.value+"%";});
 
 // K-weighting filters (48kHz)
 const STAGE1_B=[1.53512485958697,-2.69169618940638,1.19839281085285];
@@ -301,14 +310,16 @@ run.onclick=async()=>{
   for(let i=0; i<ref.length; i++) ref[i]/=refMax;
   for(let i=0; i<srcP.length; i++) srcP[i]/=srcMax;
 
-  let G=new Float64Array(nBins+1),gMin=1e9,gMax=0;
+  let G=new Float64Array(nBins+1),gMin=1e9,gMax=0,diffMax=64;
 
   for(let k=0;k<=nBins;k++){
     G[k]=Math.sqrt((ref[k]+1e-12)/(srcP[k]+1e-12));
     if(isNaN(G[k]) || !isFinite(G[k])) G[k]=1;
-    const dB=20*Math.log10(G[k]);
-    if(dB>12)G[k]=Math.pow(10,12/20);
-    if(dB<-12)G[k]=Math.pow(10,-12/20);
+    let dB=20*Math.log10(G[k]);
+    dB*=Number(matchSlider.value)/100;
+    if(dB>diffMax)dB=diffMax;
+    if(dB<-diffMax)dB=-diffMax;
+    G[k]=Math.pow(10,dB/20);
     gMin=Math.min(gMin,G[k]); gMax=Math.max(gMax,G[k]);
   }
   G=smooth(G);
