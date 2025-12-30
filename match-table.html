@@ -123,6 +123,8 @@ p {
 const out=document.getElementById("log");
 const log=t=>out.textContent+=t+"\n";
 
+document.getElementById("year").textContent = new Date().getFullYear();
+
 const audioInput = document.getElementById("audioFile");
 const refInput   = document.getElementById("refFile");
 const runBtn     = document.getElementById("run");

@@ -161,6 +161,8 @@ p {
 const fileInput = document.getElementById("file");
 const goButton = document.getElementById("go");
 
+document.getElementById("year").textContent = new Date().getFullYear();
+
 // Enable button only when file is selected
 fileInput.addEventListener("change", () => {
   goButton.disabled = fileInput.files.length === 0;
