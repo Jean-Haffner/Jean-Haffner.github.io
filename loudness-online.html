@@ -221,12 +221,12 @@ const toLU=e=>-0.691+10*Math.log10(e+1e-12);
 /* ===================== BS.1770-4 integrated loudness ===================== */
 function integrateBS1770(E){
   const LU=E.map(toLU);
-  const abs=E.filter((e,i)=>LU[i]>-70);
+  const abs=E.filter((e,i)=>LU[i]>=-70);
   if(!abs.length) return {integrated:-Infinity};
   const meanAbs=abs.reduce((a,b)=>a+b,0)/abs.length;
   const ungated=toLU(meanAbs);
   const th=ungated-10;
-  const rel=E.filter((e,i)=>LU[i]>th);
+  const rel=E.filter((e,i)=>LU[i]>=th);
   if(!rel.length) return {integrated:ungated};
   const meanRel=rel.reduce((a,b)=>a+b,0)/rel.length;
   return {integrated:toLU(meanRel)};
